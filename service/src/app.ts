@@ -1,7 +1,8 @@
 import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { adminRouter } from "./routes/admin.js";
+import { accountRouter } from "./routes/account.js";
 
-// Builds the Express app without starting it, so tests can use it directly.
 export function createApp() {
   const app = express();
   app.use(express.json());
@@ -10,6 +11,9 @@ export function createApp() {
     res.json({ status: "ok" });
   });
 
-  app.use(errorHandler); // must be registered last
+  app.use("/admin", adminRouter);
+  app.use("/v1", accountRouter);
+
+  app.use(errorHandler); 
   return app;
 }
