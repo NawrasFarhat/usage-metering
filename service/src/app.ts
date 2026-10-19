@@ -4,6 +4,7 @@ import { requireAccount } from "./middleware/auth.js";
 import { NotFoundError } from "./errors.js";
 import { adminRouter } from "./routes/admin.js";
 import { accountRouter } from "./routes/account.js";
+import { plansRouter } from "./routes/plans.js";
 
 // Builds the Express app without starting it, so tests can use it directly.
 export function createApp() {
@@ -18,7 +19,7 @@ export function createApp() {
 
   const v1 = express.Router();
   v1.use(requireAccount);
-  v1.use(accountRouter);
+  v1.use(accountRouter,plansRouter);
   app.use("/v1", v1);
 
   app.use((_req, _res) => {
