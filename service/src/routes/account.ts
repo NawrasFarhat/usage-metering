@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAccount, getAccount } from "../middleware/auth.js";
+import { getAccount } from "../middleware/auth.js";
 import { getPlanById } from "../db/queries/plans.js";
 
 export const accountRouter = Router();

@@ -16,13 +16,11 @@ export function createApp() {
 
   app.use("/admin", adminRouter);
 
-  // Every /v1 route needs an API key. Checked once here, so a new route can't forget it.
   const v1 = express.Router();
   v1.use(requireAccount);
   v1.use(accountRouter);
   app.use("/v1", v1);
 
-  // Any other path -> 404 in our error format
   app.use((_req, _res) => {
     throw new NotFoundError("Route not found");
   });
