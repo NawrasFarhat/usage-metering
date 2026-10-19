@@ -5,6 +5,7 @@ import { NotFoundError } from "./errors.js";
 import { adminRouter } from "./routes/admin.js";
 import { accountRouter } from "./routes/account.js";
 import { plansRouter } from "./routes/plans.js";
+import { usersRouter } from "./routes/users.js";
 
 // Builds the Express app without starting it, so tests can use it directly.
 export function createApp() {
@@ -19,7 +20,7 @@ export function createApp() {
 
   const v1 = express.Router();
   v1.use(requireAccount);
-  v1.use(accountRouter,plansRouter);
+  v1.use(accountRouter,plansRouter,usersRouter);
   app.use("/v1", v1);
 
   app.use((_req, _res) => {

@@ -26,7 +26,6 @@ export function optionalString(body: Record<string, unknown>, field: string, max
   return requireString(body, field, maxLength);
 }
 
-// Whole numbers only: rejects 2.5, "10", true, NaN, Infinity.
 export function requireInt(body: Record<string, unknown>, field: string, min: number): number {
   const value = body[field];
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min) {
