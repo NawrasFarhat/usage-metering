@@ -43,8 +43,7 @@ export function optionalInt(body: Record<string, unknown>, field: string, min: n
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Postgres throws (-> 500) if a uuid column is compared with a non-uuid string,
-// so ids are validated before they reach the database.
+
 export function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value);
 }

@@ -39,3 +39,11 @@ export function evaluate(input: ConsumeInput): Decision {
 export function remaining(state: ScopeState): number {
   return Math.max(0, state.limits.monthlyAllowance - state.used);
 }
+
+export function describeRejection(scope: Scope, rule: RuleName, units: number, state: ScopeState): string {
+  const level = scope === "user" ? "User" : "Account";
+  if (rule === "max_units_per_request") {
+    return `${level} plan allows at most ${state.limits.maxUnitsPerRequest} units per request; ${units} requested`;
+  }
+  return `${level} monthly allowance exceeded: ${remaining(state)} of ${state.limits.monthlyAllowance} units remaining; ${units} requested`;
+}

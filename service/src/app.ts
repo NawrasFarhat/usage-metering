@@ -6,8 +6,8 @@ import { adminRouter } from "./routes/admin.js";
 import { accountRouter } from "./routes/account.js";
 import { plansRouter } from "./routes/plans.js";
 import { usersRouter } from "./routes/users.js";
+import { consumeRouter } from "./routes/consume.js";
 
-// Builds the Express app without starting it, so tests can use it directly.
 export function createApp() {
   const app = express();
   app.use(express.json());
@@ -20,7 +20,7 @@ export function createApp() {
 
   const v1 = express.Router();
   v1.use(requireAccount);
-  v1.use(accountRouter,plansRouter,usersRouter);
+  v1.use(accountRouter,plansRouter,usersRouter,consumeRouter);
   app.use("/v1", v1);
 
   app.use((_req, _res) => {
