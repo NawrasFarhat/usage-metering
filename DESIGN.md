@@ -1,7 +1,7 @@
 # Usage Metering & Quota Service — Design
 
-Living document. Every decision made during implementation is added here.
-It becomes the basis of the README's design, assumptions and trade-offs sections.
+Every decision made during design and implementation, with its trade-offs.
+The README has the short version.
 
 ---
 
@@ -99,20 +99,25 @@ All timestamps are `timestamptz`. Months are stored as `date` (first day of the 
 
 ```
  1. Receive request       X-API-Key + {userId, units, requestId}
- 2. Validate body         -> 400
- 3. Auth                  sha256(key) -> account          -> 401
- 4. BEGIN transaction
- 5. Idempotency check     (account_id, request_id) exists?
-                          same body      -> return stored result
+ 2. Auth                  sha256(key) -> account          -> 401
+ 3. Validate body         -> 400
+ 4. Fast idempotency check (account_id, request_id) exists?
+                          same body      -> return stored result (replayed: true)
                           different body -> 409
- 6. Load user             scoped by account_id            -> 404
- 7. Ensure + lock usage   account row FIRST, then user row (FOR UPDATE)
- 8. Read current plans    account plan + user plan
+ 5. BEGIN transaction
+ 6. Load user + user plan + current UTC month (one join)  -> 404
+ 7. Create-and-lock counters: account row FIRST, then user row
+                          INSERT ... ON CONFLICT DO UPDATE ... RETURNING used
+ 8. Read account plan
  9. rules.evaluate()      PURE
-10. If accepted           increment account + user counters
+10. If accepted           increment both counters (one statement, CTE)
 11. Insert request record with limits snapshot
-12. COMMIT -> 200 {accepted, rejection?, remaining}
+12. COMMIT -> 200 {accepted, rejection?, user, account}
+    If step 11 hits UNIQUE(account_id, request_id) -> rollback -> go to step 4 logic
 ```
+
+Step 4 runs outside the transaction as a fast path. Two duplicates arriving at the same
+moment can both pass it; the unique constraint in step 11 decides which one wins.
 
 ### Known bottleneck
 The account usage row is a **hot row**: all users of one account lock the same row.
@@ -123,7 +128,7 @@ This is the price of correctness. Measured in the load test.
 |---|---|
 | Two identical requestIds at the same moment | Unique constraint -> transaction rolls back -> return stored result |
 | Deadlock | Always lock account row before user row |
-| Database down | 503, nothing half-written (transaction) |
+| Database down | 500, nothing half-written (transaction) |
 
 ---
 
@@ -227,12 +232,42 @@ This is the price of correctness. Measured in the load test.
 ### D9. Stack: Express + Drizzle vs Fastify + raw SQL
 - **Trade-offs:** Fastify is slightly faster; raw SQL shows locking more directly.
   The real bottleneck is the database hot row, not the framework. Learning new tools costs days.
-- **Recommendation:** Express + Drizzle (known tools). Locking stays explicit via `transaction()` + `.for("update")`.
+- **Recommendation:** Express + Drizzle (known tools). Locking stays explicit inside `db.transaction()`.
 
 ### D10. Monorepo folders
 - **Alternatives:** Separate repositories for service and client.
 - **Recommendation:** One repository (deliverable requires it), one folder per container:
   `service/`, `client/`, `load-tests/`.
+
+### D11. Demo client: backend + page vs page only
+- **Problem:** The client needs an API key to call the service.
+- **Alternatives:** (A) a static page calling the service from the browser; (B) a small backend that holds the key, plus a page.
+- **Trade-offs:** A is less code, but the key would be visible in the browser and the service would need CORS.
+- **Recommendation:** B. This is also how a real customer integrates: their server calls the metering service.
+
+### D12. Few SQL statements on the hot path
+- **Problem:** Every statement in consume costs a network round trip and Node CPU, while the account row is locked.
+- **Choice:** user + user plan + current UTC month in one join; `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`
+  creates and locks a counter row in one statement (same lock as `SELECT ... FOR UPDATE`);
+  both counters updated in one statement (data-modifying CTE); no idempotency re-check inside the
+  transaction (the unique constraint covers races).
+- **Trade-off:** the SQL is a little less obvious than separate queries; comments explain it.
+- **Validation:** concurrency tests pass; k6 results in `load-tests/RESULTS.md`
+  (205 req/s spread, 90 req/s on one hot account, 0 errors, totals consistent).
+
+### D13. Cross-table rules in the service layer
+- **Problem:** "A user plan cannot be assigned to an account" and "a request's user belongs to its account"
+  span two tables. A `CHECK` constraint cannot look at another table.
+- **Alternatives:** triggers or composite foreign keys vs checks in the service.
+- **Recommendation:** service layer + tests. Triggers hide logic from the code reader. Listed as a known limitation.
+
+### D14. Versioned API and separate admin key
+- All account endpoints live under `/v1` behind `requireAccount` (one place, cannot forget auth on a new route).
+- Account creation lives under `/admin` behind `X-Admin-Key`, compared with `timingSafeEqual`.
+
+### D15. Remaining only for the current month
+- **Problem:** For a past month, which allowance should `remaining` use: the plan then or now?
+- **Recommendation:** report `used` only for past months (`remaining: null`). Exact past limits per request are in the history snapshots.
 
 ---
 
