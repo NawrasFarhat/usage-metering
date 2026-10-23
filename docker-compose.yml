@@ -14,6 +14,22 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
-
+  service:
+    build: ./service
+    environment:
+      DB_URL: postgres://postgres:postgres@db:5432/metering
+      PORT: 8080
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key-change-me}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      
 volumes:
   pgdata:
