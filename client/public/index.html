@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocsApp metering demo</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1f2328; --muted:#6b6f76; --line:#e3e1dc;
+          --ok:#1a7f4b; --ok-bg:#e6f4ec; --bad:#b42318; --bad-bg:#fdecea; --accent:#3b5bdb; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:1040px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 12px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .meta { color:var(--muted); font-size:13px; }
+  .bar { height:10px; background:#eceae5; border-radius:6px; overflow:hidden; margin:10px 0 6px; }
+  .bar > span { display:block; height:100%; background:var(--accent); transition:width .3s; }
+  .bar.full > span { background:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  button, select, input { font:inherit; border:1px solid var(--line); border-radius:8px; padding:6px 12px; background:#fff; }
+  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  input { width:110px; }
+  #decision { min-height:84px; }
+  .verdict { font-weight:600; font-size:17px; }
+  .accepted { color:var(--ok); } .rejected { color:var(--bad); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; }
+  .pill.ok { background:var(--ok-bg); color:var(--ok); } .pill.bad { background:var(--bad-bg); color:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  ol { margin:0; padding-left:20px; } ol li { margin:4px 0; }
+  code { background:#f0efeb; padding:1px 5px; border-radius:4px; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DocsApp</h1>
+  <p class="sub">A pretend document app. Before processing a document, its backend asks the metering service for permission. The client code never changes; only plans do.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Try this</h2>
+      <ol>
+        <li>Alice processes a 10-unit document: <b>accepted</b>.</li>
+        <li>Alice processes a 25-unit document: <b>rejected by her user plan</b> (Basic: 20 per request).</li>
+        <li>Bob processes 100-unit documents until the <b>team</b> runs out: <b>rejected by the account plan</b>.</li>
+        <li>Switch Alice to Premium and retry 25: accepted.</li>
+        <li>Raise the team allowance to 1000 and Bob can continue.</li>
+        <li>"Send twice" sends the same request id twice: consumed once.</li>
+      </ol>
+    </section>
+    <section class="card">
+      <h2>Last decision</h2>
+      <div id="decision" class="meta">No requests yet.</div>
+    </section>
+  </div>
+
+  <div class="grid" style="margin-top:16px" id="levels"></div>
+
+  <section class="card" style="margin-top:16px">
+    <h2>Recent requests</h2>
+    <table>
+      <thead><tr><th>User</th><th>Units</th><th>Decision</th><th>Reason</th><th>Request id</th></tr></thead>
+      <tbody id="history"></tbody>
+    </table>
+    <div class="row"><button id="reset">Start over with a new demo account</button></div>
+  </section>
+</main>
+
+<script>
+const api = async (method, path, body) => {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  return { status: res.status, data: await res.json() };
+};
+
+let state = null;
+
+function bar(used, allowance) {
+  const pct = allowance ? Math.min(100, (used / allowance) * 100) : 100;
+  return `<div class="bar ${used >= allowance ? "full" : ""}"><span style="width:${pct}%"></span></div>`;
+}
+
+function render() {
+  const { usage, plans, history } = state;
+  const userPlans = plans.filter((p) => p.scope === "user");
+  const acc = usage.account;
+
+  const accountCard = `
+    <section class="card">
+      <h2>DocsApp team (account)</h2>
+      <div class="meta">${acc.plan.name} plan &middot; ${acc.plan.monthlyAllowance} units/month &middot; ${acc.plan.maxUnitsPerRequest} per request</div>
+      ${bar(acc.used, acc.monthlyAllowance)}
+      <div><b>${acc.used}</b> used &middot; <b>${acc.remaining}</b> remaining this month (${usage.month})</div>
+      <div class="row">
+        <input id="allowance" type="number" min="0" value="${acc.plan.monthlyAllowance}">
+        <button id="saveAllowance">Update team allowance</button>
+      </div>
+    </section>`;
+
+  const userCards = usage.users.map((u) => {
+    const plan = plans.find((p) => p.id === u.plan.id);
+    const options = userPlans.map((p) => `<option value="${p.id}" ${p.id === u.plan.id ? "selected" : ""}>${p.name}</option>`).join("");
+    const sizes = u.userId === "bob" ? [100] : [10, 25];
+    return `
+      <section class="card">
+        <h2>${u.userId}</h2>
+        <div class="meta">${plan.name} plan &middot; ${plan.monthlyAllowance} units/month &middot; ${plan.maxUnitsPerRequest} per request</div>
+        ${bar(u.used, u.monthlyAllowance)}
+        <div><b>${u.used}</b> used &middot; <b>${u.remaining}</b> remaining</div>
+        <div class="row">
+          ${sizes.map((n) => `<button class="primary" data-process="${u.userId}" data-units="${n}">Process ${n}-unit document</button>`).join("")}
+        </div>
+        <div class="row">
+          <select data-plan-for="${u.userId}">${options}</select>
+          <button data-assign="${u.userId}">Switch plan</button>
+          <button data-twice="${u.userId}" data-units="${sizes[0]}">Send twice</button>
+        </div>
+      </section>`;
+  }).join("");
+
+  document.getElementById("levels").innerHTML = accountCard + userCards;
+
+  document.getElementById("history").innerHTML = history.map((r) => `
+    <tr>
+      <td>${r.userId}</td><td>${r.units}</td>
+      <td>${r.accepted ? '<span class="pill ok">accepted</span>' : '<span class="pill bad">rejected</span>'}</td>
+      <td>${r.rejection ? `${r.rejection.scope} &middot; ${r.rejection.rule}` : ""}</td>
+      <td><code>${r.requestId.slice(0, 8)}</code></td>
+    </tr>`).join("");
+}
+
+function showDecision(result, extra = "") {
+  const el = document.getElementById("decision");
+  if (result.error) {
+    el.innerHTML = `<div class="verdict rejected">Error</div><div>${result.error.message}</div>`;
+    return;
+  }
+  el.innerHTML = result.accepted
+    ? `<div class="verdict accepted">Accepted</div>
+       <div>${result.userId} consumed ${result.units} units. ${result.userId} has ${result.user.remaining} left; the team has ${result.account.remaining} left.</div>${extra}`
+    : `<div class="verdict rejected">Rejected by the ${result.rejection.scope} plan</div>
+       <div>${result.rejection.message}</div>
+       <div class="meta">rule: <code>${result.rejection.rule}</code> &middot; nothing was consumed</div>${extra}`;
+}
+
+async function refresh() {
+  state = (await api("GET", "/api/state")).data;
+  render();
+}
+
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  if (t.dataset.process) {
+    const { data } = await api("POST", "/api/process", { userId: t.dataset.process, units: Number(t.dataset.units) });
+    showDecision(data);
+  } else if (t.dataset.assign) {
+    const planId = document.querySelector(`[data-plan-for="${t.dataset.assign}"]`).value;
+    await api("PUT", `/api/users/${t.dataset.assign}/plan`, { planId });
+    document.getElementById("decision").innerHTML = `<div class="verdict">Plan switched</div><div>Usage this month is kept; the new limits apply to the next request.</div>`;
+  } else if (t.dataset.twice) {
+    const { data } = await api("POST", "/api/retry-demo", { userId: t.dataset.twice, units: Number(t.dataset.units) });
+    showDecision(data.second, `<div class="meta">Second call: replayed = <b>${data.second.replayed}</b>, used is the same after both calls.</div>`);
+  } else if (t.id === "saveAllowance") {
+    const monthlyAllowance = Number(document.getElementById("allowance").value);
+    const { status, data } = await api("PATCH", "/api/team-plan", { monthlyAllowance });
+    document.getElementById("decision").innerHTML = status === 200
+      ? `<div class="verdict">Team plan updated</div><div>Monthly allowance is now ${data.monthlyAllowance}. Applies to the next request.</div>`
+      : `<div class="verdict rejected">Error</div><div>${data.error.message}</div>`;
+  } else if (t.id === "reset") {
+    await api("POST", "/api/reset");
+    document.getElementById("decision").innerHTML = "New demo account created.";
+  } else {
+    return;
+  }
+  await refresh();
+});
+
+refresh();
+</script>
+</body>
+</html>
