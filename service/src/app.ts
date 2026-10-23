@@ -7,6 +7,7 @@ import { accountRouter } from "./routes/account.js";
 import { plansRouter } from "./routes/plans.js";
 import { usersRouter } from "./routes/users.js";
 import { consumeRouter } from "./routes/consume.js";
+import { usageRouter } from "./routes/usage.js";
 
 export function createApp() {
   const app = express();
@@ -20,7 +21,7 @@ export function createApp() {
 
   const v1 = express.Router();
   v1.use(requireAccount);
-  v1.use(accountRouter,plansRouter,usersRouter,consumeRouter);
+  v1.use(accountRouter,plansRouter,usersRouter,consumeRouter,usageRouter);
   app.use("/v1", v1);
 
   app.use((_req, _res) => {

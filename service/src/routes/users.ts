@@ -6,6 +6,8 @@ import { changeUserPlan, getUserOr404, registerUser } from "../services/users.js
 import { presentPlan } from "../services/present.js";
 import { optionalUuid, parsePagination, requireObject, requireString, requireUuid } from "../validation.js";
 import type { User } from "../db/queries/users.js";
+import { userMonths, userUsage } from "../services/usage.js";
+import { parseMonthParam } from "../month.js";
 
 export const usersRouter = Router();
 
@@ -33,12 +35,22 @@ usersRouter.get("/users", async (req, res) => {
 
 usersRouter.get("/users/:userId", async (req, res) => {
   const user = await getUserOr404(getAccount(req).id, req.params.userId);
-  res.json(await presentUser(user));
+  res.json(await userUsage(user, undefined));
 });
 
 usersRouter.put("/users/:userId/plan", async (req, res) => {
   const body = requireObject(req.body);
   const planId = requireUuid(body, "planId");
   const user = await changeUserPlan(getAccount(req).id, req.params.userId, planId);
-  res.json(await presentUser(user));
+  res.json(await userUsage(user, undefined));
+});
+
+usersRouter.get("/users/:userId/usage", async (req, res) => {
+  const user = await getUserOr404(getAccount(req).id, req.params.userId);
+  res.json(await userUsage(user, parseMonthParam(req.query.month)));
+});
+
+usersRouter.get("/users/:userId/usage/months", async (req, res) => {
+  const user = await getUserOr404(getAccount(req).id, req.params.userId);
+  res.json({ userId: user.externalId, items: await userMonths(user.id) });
 });

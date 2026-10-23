@@ -28,3 +28,8 @@ export async function updateAccountPlan(accountId: string, planId: string): Prom
   const [account] = await db.update(accounts).set({ planId }).where(eq(accounts.id, accountId)).returning();
   return account;
 }
+
+export async function getAccountById(id: string, exec: Executor = db): Promise<Account | undefined> {
+  const [account] = await exec.select().from(accounts).where(eq(accounts.id, id));
+  return account;
+}
