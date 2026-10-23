@@ -16,7 +16,7 @@ accountRouter.get("/account", async (req, res) => {
   res.json({
     id: account.id,
     name: account.name,
-    plan,
+    plan: presentPlan(plan!),
     createdAt: account.createdAt,
   });
 });
